@@ -106,19 +106,6 @@ public class LocalSnapshotStorage implements SnapshotStorage {
             return false;
         }
 
-        // delete temp snapshot
-        if (!this.filterBeforeCopyRemote) {
-            final String tempSnapshotPath = this.path + File.separator + TEMP_PATH;
-            final File tempFile = new File(tempSnapshotPath);
-            if (tempFile.exists()) {
-                try {
-                    FileUtils.forceDelete(tempFile);
-                } catch (final IOException e) {
-                    LOG.error("Fail to delete temp snapshot path {}.", tempSnapshotPath);
-                    return false;
-                }
-            }
-        }
         // delete old snapshot
         final List<Long> snapshots = new ArrayList<>();
         final File[] oldFiles = dir.listFiles();
@@ -209,7 +196,7 @@ public class LocalSnapshotStorage implements SnapshotStorage {
                     break;
                 }
             } catch (final IOException e) {
-                LOG.error("Fail to sync writer {}.", writer.getPath());
+                LOG.error("Fail to sync writer {}. error: {}", writer.getPath(), e);
                 ret = RaftError.EIO.getNumber();
                 break;
             }

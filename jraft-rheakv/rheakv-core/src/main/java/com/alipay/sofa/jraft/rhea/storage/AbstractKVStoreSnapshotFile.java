@@ -120,6 +120,9 @@ public abstract class AbstractKVStoreSnapshotFile implements KVStoreSnapshotFile
             final Checksum checksum = new CRC64();
             ZipStrategyManager.getDefault().compress(writerPath, SNAPSHOT_DIR, outputFile, checksum);
             metaBuilder.setChecksum(Long.toHexString(checksum.getValue()));
+            long fileSize = FileUtils.sizeOf(new File(outputFile));
+            metaBuilder.setFileSize(fileSize);
+
             if (writer.addFile(SNAPSHOT_ARCHIVE, metaBuilder.build())) {
                 done.run(Status.OK());
             } else {

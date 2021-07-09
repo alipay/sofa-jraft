@@ -108,6 +108,24 @@ public class LocalSnapshotWriter extends SnapshotWriter {
         return this.metaTable.saveToFile(this.path + File.separator + JRAFT_SNAPSHOT_META_FILE);
     }
 
+    public void checkExistingMeta(final SnapshotMeta meta) {
+        // loaded in this.init() if meta file exists
+        if (this.metaTable.hasMeta()) {
+            SnapshotMeta existingMeta = this.metaTable.getMeta();
+            LOG.info("lastIncludedIndex of existing snapshot: {}", existingMeta.getLastIncludedIndex());
+            if (existingMeta.getLastIncludedIndex() != meta.getLastIncludedIndex()
+                || existingMeta.getLastIncludedTerm() != meta.getLastIncludedTerm()) {
+                try {
+                    final File dir = new File(this.path);
+                    FileUtils.deleteDirectory(dir);
+                    FileUtils.forceMkdir(dir);
+                } catch (IOException e) {
+                    LOG.error("check existing meta error, path: {}, error: {}.", path, e.getMessage());
+                }
+            }
+        }
+    }
+
     @Override
     public boolean addFile(final String fileName, final Message fileMeta) {
         final Builder metaBuilder = LocalFileMeta.newBuilder();

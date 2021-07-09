@@ -15,4 +15,5 @@ message LocalFileMeta {
     optional bytes user_meta   = 1;
     optional FileSource source = 2;
     optional string checksum   = 3;
+    optional int64 file_size   = 4;
 }

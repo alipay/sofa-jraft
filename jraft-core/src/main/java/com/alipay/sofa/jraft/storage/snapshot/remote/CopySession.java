@@ -17,17 +17,17 @@
 package com.alipay.sofa.jraft.storage.snapshot.remote;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import javax.annotation.concurrent.ThreadSafe;
 
+import org.apache.commons.lang.math.RandomUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +48,6 @@ import com.alipay.sofa.jraft.util.Endpoint;
 import com.alipay.sofa.jraft.util.OnlyForTest;
 import com.alipay.sofa.jraft.util.Requires;
 import com.alipay.sofa.jraft.util.Utils;
-import com.google.protobuf.Message;
 
 /**
  * Copy session.
@@ -63,33 +62,42 @@ public class CopySession implements Session {
 
     private final Lock                   lock        = new ReentrantLock();
     private final Status                 st          = Status.OK();
-    private final CountDownLatch         finishLatch = new CountDownLatch(1);
-    private final GetFileResponseClosure done        = new GetFileResponseClosure();
+    private CountDownLatch               finishLatch;
     private final RaftClientService      rpcService;
     private final GetFileRequest.Builder requestBuilder;
     private final Endpoint               endpoint;
     private final Scheduler              timerManager;
     private final SnapshotThrottle       snapshotThrottle;
     private final RaftOptions            raftOptions;
-    private int                          retryTimes  = 0;
-    private boolean                      finished;
-    private ByteBufferCollector          destBuf;
     private CopyOptions                  copyOptions = new CopyOptions();
-    private OutputStream                 outputStream;
-    private ScheduledFuture<?>           timer;
     private String                       destPath;
-    private Future<Message>              rpcCall;
+    private DownloadManager              downloadManager;
+    private int                          concurrency;
+    private ScheduledFuture<?>           saveStateFuture;
+    private AtomicInteger                remainTask;
 
     /**
      * Get file response closure to answer client.
      *
      * @author boyan (boyan@alibaba-inc.com)
      */
-    private class GetFileResponseClosure extends RpcResponseClosureAdapter<GetFileResponse> {
+    static class GetFileResponseClosure extends RpcResponseClosureAdapter<GetFileResponse> {
+        final DownloadContext context;
+        final CopySession     copySession;
+
+        public GetFileResponseClosure(CopySession copySession, DownloadContext context) {
+            this.copySession = copySession;
+            this.context = context;
+        }
+
+        @OnlyForTest
+        public DownloadContext getContext() {
+            return context;
+        }
 
         @Override
         public void run(final Status status) {
-            onRpcReturned(status, getResponse());
+            copySession.onRpcReturned(context, status, getResponse());
         }
     }
 
@@ -98,30 +106,32 @@ public class CopySession implements Session {
     }
 
     @OnlyForTest
-    GetFileResponseClosure getDone() {
-        return this.done;
-    }
-
-    @OnlyForTest
-    Future<Message> getRpcCall() {
-        return this.rpcCall;
-    }
-
-    @OnlyForTest
-    ScheduledFuture<?> getTimer() {
-        return this.timer;
+    DownloadManager getDownloadManager() {
+        return this.downloadManager;
     }
 
     @Override
     public void close() throws IOException {
+        for (int i = 0; i < concurrency; i++) {
+            DownloadContext context = downloadManager.getDownloadContext(i);
+            context.lock.lock();
+            try {
+                if (!context.finished) {
+                    Utils.closeQuietly(context.fileChannel);
+                }
+                if (context.destBuf != null) {
+                    context.destBuf.recycle();
+                    context.destBuf = null;
+                }
+            } finally {
+                context.lock.unlock();
+            }
+        }
         this.lock.lock();
         try {
-            if (!this.finished) {
-                Utils.closeQuietly(this.outputStream);
-            }
-            if (null != this.destBuf) {
-                this.destBuf.recycle();
-                this.destBuf = null;
+            if (this.saveStateFuture != null) {
+                this.saveStateFuture.cancel(true);
+                this.saveStateFuture = null;
             }
         } finally {
             this.lock.unlock();
@@ -140,35 +150,58 @@ public class CopySession implements Session {
         this.endpoint = ep;
     }
 
-    public void setDestBuf(final ByteBufferCollector bufRef) {
-        this.destBuf = bufRef;
-    }
-
     public void setCopyOptions(final CopyOptions copyOptions) {
         this.copyOptions = copyOptions;
     }
 
-    public void setOutputStream(final OutputStream out) {
-        this.outputStream = out;
+    public void init(String destPath, long fileSize, final ByteBufferCollector bufRef) throws IOException {
+        this.concurrency = bufRef != null ? 1 : raftOptions.getDownloadingSnapshotConcurrency();
+        long sliceCount = fileSize == 0 ? 1 : (fileSize - 1) / raftOptions.getMaxByteCountPerRpc() + 1;
+        this.concurrency = (int) Math.min(this.concurrency, sliceCount);
+
+        this.finishLatch = new CountDownLatch(this.concurrency);
+        this.remainTask = new AtomicInteger(this.concurrency);
+
+        this.downloadManager = new DownloadManager(this, this.requestBuilder, this.raftOptions, destPath, fileSize,
+            this.concurrency);
+        this.downloadManager.setDestBuf(bufRef);
+        this.downloadManager.setDestPath(destPath);
     }
 
     @Override
     public void cancel() {
         this.lock.lock();
         try {
-            if (this.finished) {
-                return;
+            for (int i = 0; i < concurrency; i++) {
+                DownloadContext context = downloadManager.getDownloadContext(i);
+                context.lock.lock();
+                try {
+                    if (context.finished) {
+                        continue;
+                    }
+                    if (context.timer != null) {
+                        context.timer.cancel(true);
+                    }
+                    if (context.rpcCall != null) {
+                        context.rpcCall.cancel(true);
+                    }
+                    if (context.st.isOk()) {
+                        context.st.setError(RaftError.ECANCELED, RaftError.ECANCELED.name());
+                    }
+                    if (context.destBuf != null) {
+                        context.destBuf.recycle();
+                        context.destBuf = null;
+                    }
+                } finally {
+                    context.lock.unlock();
+                }
+                onFinished(context);
             }
-            if (this.timer != null) {
-                this.timer.cancel(true);
+            if (saveStateFuture != null) {
+                saveStateFuture.cancel(true);
+                saveStateFuture = null;
             }
-            if (this.rpcCall != null) {
-                this.rpcCall.cancel(true);
-            }
-            if (this.st.isOk()) {
-                this.st.setError(RaftError.ECANCELED, RaftError.ECANCELED.name());
-            }
-            onFinished();
+            downloadManager.stop();
         } finally {
             this.lock.unlock();
         }
@@ -181,106 +214,170 @@ public class CopySession implements Session {
 
     @Override
     public Status status() {
-        return this.st;
-    }
-
-    private void onFinished() {
-        if (!this.finished) {
-            if (!this.st.isOk()) {
-                LOG.error("Fail to copy data, readerId={} fileName={} offset={} status={}",
-                    this.requestBuilder.getReaderId(), this.requestBuilder.getFilename(),
-                    this.requestBuilder.getOffset(), this.st);
-            }
-            if (this.outputStream != null) {
-                Utils.closeQuietly(this.outputStream);
-                this.outputStream = null;
-            }
-            if (this.destBuf != null) {
-                final ByteBuffer buf = this.destBuf.getBuffer();
-                if (buf != null) {
-                    buf.flip();
-                }
-                this.destBuf = null;
-            }
-            this.finished = true;
-            this.finishLatch.countDown();
+        synchronized (this.st) {
+            return this.st;
         }
     }
 
-    private void onTimer() {
-        RpcUtils.runInThread(this::sendNextRpc);
+    private void onFinished(DownloadContext context) {
+        context.lock.lock();
+
+        boolean canSteal = !context.finished && context.st.isOk();
+        context.lock.unlock();
+        if (canSteal) {
+            if (downloadManager.stealOtherSegment(context)) {
+                sendNextRpc(context);
+                return;
+            }
+        }
+
+        boolean downloadFinished = false;
+        context.lock.lock();
+        try {
+            if (!context.finished) {
+                if (!context.st.isOk()) {
+                    LOG.error("Fail to copy data, readerId={} fileName={} offset={} status={}",
+                        context.requestBuilder.getReaderId(), context.requestBuilder.getFilename(),
+                        context.requestBuilder.getOffset(), context.st);
+                    synchronized (this.st) {
+                        if (this.st.isOk()) {
+                            this.st.setError(context.st.getCode(), context.st.getErrorMsg());
+                        }
+                    }
+                }
+                if (remainTask.decrementAndGet() == 0) {
+                    downloadFinished = true;
+                }
+
+                if (context.fileChannel != null) {
+                    Utils.closeQuietly(context.fileChannel);
+                    context.fileChannel = null;
+                }
+                if (context.destBuf != null) {
+                    final ByteBuffer buf = context.destBuf.getBuffer();
+                    if (buf != null) {
+                        buf.flip();
+                    }
+                    context.destBuf = null;
+                }
+                context.finished = true;
+                this.finishLatch.countDown();
+            }
+        } finally {
+            context.lock.unlock();
+            if (downloadFinished) {
+                downloadManager.downloadFinished();
+                LOG.info("download finished");
+                this.lock.lock();
+                try {
+                    if (saveStateFuture != null) {
+                        saveStateFuture.cancel(true);
+                        saveStateFuture = null;
+                    }
+                } finally {
+                    this.lock.unlock();
+                }
+            }
+        }
     }
 
-    void onRpcReturned(final Status status, final GetFileResponse response) {
-        this.lock.lock();
+    private void onTimer(final DownloadContext context) {
+        RpcUtils.runInThread(() -> sendNextRpc(context));
+    }
+
+    private void onSaveState() {
+        downloadManager.saveState();
+    }
+
+    void onRpcReturned(final DownloadContext context, final Status status, final GetFileResponse response) {
         try {
-            if (this.finished) {
+            int mSec = RandomUtils.nextInt(10);
+            Thread.sleep(10 + mSec);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        boolean finished = false;
+        context.lock.lock();
+        try {
+            if (context.finished) {
                 return;
             }
             if (!status.isOk()) {
                 // Reset count to make next rpc retry the previous one
-                this.requestBuilder.setCount(0);
+                context.requestBuilder.setCount(0);
                 if (status.getCode() == RaftError.ECANCELED.getNumber()) {
-                    if (this.st.isOk()) {
-                        this.st.setError(status.getCode(), status.getErrorMsg());
-                        onFinished();
+                    if (context.st.isOk()) {
+                        context.st.setError(status.getCode(), status.getErrorMsg());
+                        finished = true;
                         return;
                     }
                 }
 
                 // Throttled reading failure does not increase _retry_times
                 if (status.getCode() != RaftError.EAGAIN.getNumber()
-                        && ++this.retryTimes >= this.copyOptions.getMaxRetry()) {
-                    if (this.st.isOk()) {
-                        this.st.setError(status.getCode(), status.getErrorMsg());
-                        onFinished();
+                        && ++context.retryTimes >= this.copyOptions.getMaxRetry()) {
+                    if (context.st.isOk()) {
+                        context.st.setError(status.getCode(), status.getErrorMsg());
+                        finished = true;
                         return;
                     }
                 }
-                this.timer = this.timerManager.schedule(this::onTimer, this.copyOptions.getRetryIntervalMs(),
+                context.timer = this.timerManager.schedule(() -> onTimer(context), this.copyOptions.getRetryIntervalMs(),
                     TimeUnit.MILLISECONDS);
                 return;
             }
-            this.retryTimes = 0;
+            context.retryTimes = 0;
             Requires.requireNonNull(response, "response");
             // Reset count to |real_read_size| to make next rpc get the right offset
             if (!response.getEof()) {
-                this.requestBuilder.setCount(response.getReadSize());
+                context.requestBuilder.setCount(response.getReadSize());
             }
-            if (this.outputStream != null) {
+            if (context.fileChannel != null) {
                 try {
-                    response.getData().writeTo(this.outputStream);
+                    context.fileChannel.write(response.getData().asReadOnlyByteBuffer(), context.currentOffset);
                 } catch (final IOException e) {
                     LOG.error("Fail to write into file {}", this.destPath);
-                    this.st.setError(RaftError.EIO, RaftError.EIO.name());
-                    onFinished();
+                    context.st.setError(RaftError.EIO, RaftError.EIO.name());
+                    finished = true;
+                    return;
+                }
+                context.currentOffset += response.getData().size();
+                // Due to work stealing, |lastOffset| may become less
+                if (context.currentOffset >= context.lastOffset) {
+                    finished = true;
                     return;
                 }
             } else {
-                this.destBuf.put(response.getData().asReadOnlyByteBuffer());
-            }
-            if (response.getEof()) {
-                onFinished();
-                return;
+                context.destBuf.put(response.getData().asReadOnlyByteBuffer());
+                context.currentOffset += response.getData().size();
+                if(response.getEof()) {
+                    finished = true;
+                    return;
+                }
             }
         } finally {
-            this.lock.unlock();
+            context.lock.unlock();
+            if(finished) {
+                onFinished(context);
+            }
         }
-        sendNextRpc();
+        sendNextRpc(context);
     }
 
     /**
      * Send next RPC request to get a piece of file data.
      */
-    void sendNextRpc() {
-        this.lock.lock();
+    void sendNextRpc(final DownloadContext context) {
+        context.lock.lock();
         try {
-            this.timer = null;
-            final long offset = this.requestBuilder.getOffset() + this.requestBuilder.getCount();
-            final long maxCount = this.destBuf == null ? this.raftOptions.getMaxByteCountPerRpc() : Integer.MAX_VALUE;
-            this.requestBuilder.setOffset(offset).setCount(maxCount).setReadPartly(true);
+            context.timer = null;
+            final long offset = context.currentOffset;
+            final long remainBytes = context.destBuf != null ? Integer.MAX_VALUE : context.lastOffset - context.currentOffset;
+            final long maxCount = Math.min(this.raftOptions.getMaxByteCountPerRpc(), remainBytes);
 
-            if (this.finished) {
+            context.requestBuilder.setOffset(offset).setCount(maxCount).setReadPartly(true);
+
+            if (context.finished) {
                 return;
             }
             // throttle
@@ -289,18 +386,27 @@ public class CopySession implements Session {
                 newMaxCount = this.snapshotThrottle.throttledByThroughput(maxCount);
                 if (newMaxCount == 0) {
                     // Reset count to make next rpc retry the previous one
-                    this.requestBuilder.setCount(0);
-                    this.timer = this.timerManager.schedule(this::onTimer, this.copyOptions.getRetryIntervalMs(),
+                    context.requestBuilder.setCount(0);
+                    context.timer = this.timerManager.schedule(() -> onTimer(context), this.copyOptions.getRetryIntervalMs(),
                         TimeUnit.MILLISECONDS);
                     return;
                 }
             }
-            this.requestBuilder.setCount(newMaxCount);
-            final RpcRequests.GetFileRequest request = this.requestBuilder.build();
-            LOG.debug("Send get file request {} to peer {}", request, this.endpoint);
-            this.rpcCall = this.rpcService.getFile(this.endpoint, request, this.copyOptions.getTimeoutMs(), this.done);
+            context.requestBuilder.setCount(newMaxCount);
+            final RpcRequests.GetFileRequest request = context.requestBuilder.build();
+//            LOG.debug("Send get file request {} to peer {}", request, this.endpoint);
+            context.rpcCall = this.rpcService.getFile(this.endpoint, request, this.copyOptions.getTimeoutMs(), context.done);
         } finally {
-            this.lock.unlock();
+            context.lock.unlock();
         }
+    }
+
+    public void start() {
+        for (int i = 0; i < this.concurrency; i++) {
+            DownloadContext context = this.downloadManager.getDownloadContext(i);
+            sendNextRpc(context);
+        }
+        this.saveStateFuture = this.timerManager.scheduleWithFixedDelay(this::onSaveState,
+                1, 1, TimeUnit.SECONDS);
     }
 }
