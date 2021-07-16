@@ -609,7 +609,7 @@ public class Replicator implements ThreadId.OnError {
     void installSnapshot() {
         if (getState() == State.Snapshot) {
             LOG.warn("Replicator {} is installing snapshot, ignore the new request.", this.options.getPeerId());
-            this.id.unlock();
+            unlockId();
             return;
         }
         boolean doUnlock = true;
@@ -622,7 +622,7 @@ public class Replicator implements ThreadId.OnError {
                 final NodeImpl node = this.options.getNode();
                 final RaftException error = new RaftException(EnumOutter.ErrorType.ERROR_TYPE_SNAPSHOT);
                 error.setStatus(new Status(RaftError.EIO, "Fail to open snapshot"));
-                this.id.unlock();
+                unlockId();
                 doUnlock = false;
                 node.onError(error);
                 return;
@@ -633,7 +633,7 @@ public class Replicator implements ThreadId.OnError {
                 final RaftException error = new RaftException(EnumOutter.ErrorType.ERROR_TYPE_SNAPSHOT);
                 error.setStatus(new Status(RaftError.EIO, "Fail to generate uri for snapshot reader"));
                 releaseReader();
-                this.id.unlock();
+                unlockId();
                 doUnlock = false;
                 node.onError(error);
                 return;
@@ -645,7 +645,7 @@ public class Replicator implements ThreadId.OnError {
                 final RaftException error = new RaftException(EnumOutter.ErrorType.ERROR_TYPE_SNAPSHOT);
                 error.setStatus(new Status(RaftError.EIO, "Fail to load meta from %s", snapshotPath));
                 releaseReader();
-                this.id.unlock();
+                unlockId();
                 doUnlock = false;
                 node.onError(error);
                 return;
@@ -681,7 +681,7 @@ public class Replicator implements ThreadId.OnError {
             addInflight(RequestType.Snapshot, this.nextIndex, 0, 0, seq, rpcFuture);
         } finally {
             if (doUnlock) {
-                this.id.unlock();
+                unlockId();
             }
         }
     }
@@ -812,7 +812,7 @@ public class Replicator implements ThreadId.OnError {
             LOG.debug("Node {} send HeartbeatRequest to {} term {} lastCommittedIndex {}", this.options.getNode()
                 .getNodeId(), this.options.getPeerId(), this.options.getTerm(), rb.getCommittedIndex());
         } finally {
-            this.id.unlock();
+                unlockId();
         }
     }
 
@@ -1008,7 +1008,7 @@ public class Replicator implements ThreadId.OnError {
         // fine now.
         if(this.blockTimer != null) {
             // already in blocking state,return immediately.
-            this.id.unlock();
+            unlockId();
             return;
         }
         final long dueTime = startTimeMs + this.options.getDynamicHeartBeatTimeoutMs();
@@ -1017,7 +1017,7 @@ public class Replicator implements ThreadId.OnError {
             this.blockTimer = this.timerManager.schedule(() -> onBlockTimeout(this.id), dueTime - Utils.nowMs(),
                 TimeUnit.MILLISECONDS);
             this.statInfo.runningState = RunningState.BLOCKING;
-            this.id.unlock();
+            unlockId();
         } catch (final Exception e) {
             this.blockTimer = null;
             LOG.error("Fail to add timer", e);
@@ -1549,7 +1549,7 @@ public class Replicator implements ThreadId.OnError {
                 (arg, errorCode) -> continueSending((ThreadId) arg, errorCode), this.id);
             this.statInfo.runningState = RunningState.IDLE;
         } finally {
-            this.id.unlock();
+            unlockId();
         }
     }
 
@@ -1576,7 +1576,7 @@ public class Replicator implements ThreadId.OnError {
             }
         } finally {
             if (doUnlock) {
-                this.id.unlock();
+                unlockId();
             }
         }
 
@@ -1710,7 +1710,7 @@ public class Replicator implements ThreadId.OnError {
             }
         } finally {
             if (unlockId) {
-                this.id.unlock();
+                unlockId();
             }
         }
 
@@ -1819,7 +1819,7 @@ public class Replicator implements ThreadId.OnError {
         // Register log_index so that _on_rpc_return trigger
         // _send_timeout_now if _next_index reaches log_index
         this.timeoutNowIndex = logIndex;
-        this.id.unlock();
+        unlockId();
         return true;
     }
 
@@ -1854,6 +1854,13 @@ public class Replicator implements ThreadId.OnError {
         }
         id.unlock();
         return nextIdx;
+    }
+
+    private void unlockId() {
+        if (this.id == null) {
+            return;
+        }
+        this.id.unlock();
     }
 
 }
