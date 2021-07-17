@@ -90,7 +90,7 @@ public class LocalSnapshotWriter extends SnapshotWriter {
 
     @Override
     public void close() throws IOException {
-        close(false);
+        close(true);
     }
 
     @Override

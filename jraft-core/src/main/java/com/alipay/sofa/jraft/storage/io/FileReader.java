@@ -33,6 +33,13 @@ public interface FileReader {
     int EOF = -1;
 
     /**
+     * Get the slice size.
+     *
+     * @return slice size of the file
+     */
+    long getSliceSize();
+
+    /**
      * Get the file path.
      *
      * @return path of the file
@@ -51,7 +58,6 @@ public interface FileReader {
      * @throws RetryAgainException if it's not allowed to read partly
      * or it's allowed but throughput is throttled to 0, try again.
      */
-    int readFile(final ByteBufferCollector buf, final String fileName, final long offset, final long maxCount)
-                                                                                                              throws IOException,
-                                                                                                              RetryAgainException;
+    int readFile(final ByteBufferCollector buf, final String fileName, final long sliceId, final long offset,
+                 final long maxCount) throws IOException, RetryAgainException;
 }

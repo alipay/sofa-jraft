@@ -99,12 +99,21 @@ public final class FileService {
             LOG.debug("GetFile from {} path={} filename={} offset={} count={}", done.getRpcCtx().getRemoteAddress(),
                 reader.getPath(), request.getFilename(), request.getOffset(), request.getCount());
         }
-
-        final ByteBufferCollector dataBuffer = ByteBufferCollector.allocate();
         final GetFileResponse.Builder responseBuilder = GetFileResponse.newBuilder();
+
+        long need = reader.getSliceSize() - request.getOffset();
+        if (need == 0) {
+            responseBuilder.setReadSize(0);
+            responseBuilder.setEof(true);
+            responseBuilder.setData(ByteString.EMPTY);
+            return responseBuilder.build();
+        }
+
+        final ByteBufferCollector dataBuffer = ByteBufferCollector.allocate((int) Math.min(need, request.getCount()));
+
         try {
-            final int read = reader
-                .readFile(dataBuffer, request.getFilename(), request.getOffset(), request.getCount());
+            final int read = reader.readFile(dataBuffer, request.getFilename(), request.getSliceId(),
+                request.getOffset(), request.getCount());
             responseBuilder.setReadSize(read);
             responseBuilder.setEof(read == FileReader.EOF);
             final ByteBuffer buf = dataBuffer.getBuffer();

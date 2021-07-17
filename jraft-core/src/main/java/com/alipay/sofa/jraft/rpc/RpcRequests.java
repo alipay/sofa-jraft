@@ -10972,6 +10972,16 @@ public final class RpcRequests {
          * <code>optional bool read_partly = 5;</code>
          */
         boolean getReadPartly();
+
+        /**
+         * <code>required int32 slice_id = 6;</code>
+         */
+        boolean hasSliceId();
+
+        /**
+         * <code>required int32 slice_id = 6;</code>
+         */
+        int getSliceId();
     }
 
     /**
@@ -10993,6 +11003,7 @@ public final class RpcRequests {
             count_ = 0L;
             offset_ = 0L;
             readPartly_ = false;
+            sliceId_ = 0;
         }
 
         @java.lang.Override
@@ -11048,6 +11059,11 @@ public final class RpcRequests {
                         case 40: {
                             bitField0_ |= 0x00000010;
                             readPartly_ = input.readBool();
+                            break;
+                        }
+                        case 48: {
+                            bitField0_ |= 0x00000020;
+                            sliceId_ = input.readInt32();
                             break;
                         }
                     }
@@ -11182,6 +11198,23 @@ public final class RpcRequests {
             return readPartly_;
         }
 
+        public static final int SLICE_ID_FIELD_NUMBER = 6;
+        private int             sliceId_;
+
+        /**
+         * <code>required int32 slice_id = 6;</code>
+         */
+        public boolean hasSliceId() {
+            return ((bitField0_ & 0x00000020) == 0x00000020);
+        }
+
+        /**
+         * <code>required int32 slice_id = 6;</code>
+         */
+        public int getSliceId() {
+            return sliceId_;
+        }
+
         private byte memoizedIsInitialized = -1;
 
         public final boolean isInitialized() {
@@ -11207,6 +11240,10 @@ public final class RpcRequests {
                 memoizedIsInitialized = 0;
                 return false;
             }
+            if (!hasSliceId()) {
+                memoizedIsInitialized = 0;
+                return false;
+            }
             memoizedIsInitialized = 1;
             return true;
         }
@@ -11226,6 +11263,9 @@ public final class RpcRequests {
             }
             if (((bitField0_ & 0x00000010) == 0x00000010)) {
                 output.writeBool(5, readPartly_);
+            }
+            if (((bitField0_ & 0x00000020) == 0x00000020)) {
+                output.writeInt32(6, sliceId_);
             }
             unknownFields.writeTo(output);
         }
@@ -11250,6 +11290,9 @@ public final class RpcRequests {
             }
             if (((bitField0_ & 0x00000010) == 0x00000010)) {
                 size += com.google.protobuf.CodedOutputStream.computeBoolSize(5, readPartly_);
+            }
+            if (((bitField0_ & 0x00000020) == 0x00000020)) {
+                size += com.google.protobuf.CodedOutputStream.computeInt32Size(6, sliceId_);
             }
             size += unknownFields.getSerializedSize();
             memoizedSize = size;
@@ -11287,6 +11330,10 @@ public final class RpcRequests {
             if (hasReadPartly()) {
                 result = result && (getReadPartly() == other.getReadPartly());
             }
+            result = result && (hasSliceId() == other.hasSliceId());
+            if (hasSliceId()) {
+                result = result && (getSliceId() == other.getSliceId());
+            }
             result = result && unknownFields.equals(other.unknownFields);
             return result;
         }
@@ -11317,6 +11364,10 @@ public final class RpcRequests {
             if (hasReadPartly()) {
                 hash = (37 * hash) + READ_PARTLY_FIELD_NUMBER;
                 hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(getReadPartly());
+            }
+            if (hasSliceId()) {
+                hash = (37 * hash) + SLICE_ID_FIELD_NUMBER;
+                hash = (53 * hash) + getSliceId();
             }
             hash = (29 * hash) + unknownFields.hashCode();
             memoizedHashCode = hash;
@@ -11456,6 +11507,8 @@ public final class RpcRequests {
                 bitField0_ = (bitField0_ & ~0x00000008);
                 readPartly_ = false;
                 bitField0_ = (bitField0_ & ~0x00000010);
+                sliceId_ = 0;
+                bitField0_ = (bitField0_ & ~0x00000020);
                 return this;
             }
 
@@ -11500,6 +11553,10 @@ public final class RpcRequests {
                     to_bitField0_ |= 0x00000010;
                 }
                 result.readPartly_ = readPartly_;
+                if (((from_bitField0_ & 0x00000020) == 0x00000020)) {
+                    to_bitField0_ |= 0x00000020;
+                }
+                result.sliceId_ = sliceId_;
                 result.bitField0_ = to_bitField0_;
                 onBuilt();
                 return result;
@@ -11560,6 +11617,9 @@ public final class RpcRequests {
                 if (other.hasReadPartly()) {
                     setReadPartly(other.getReadPartly());
                 }
+                if (other.hasSliceId()) {
+                    setSliceId(other.getSliceId());
+                }
                 this.mergeUnknownFields(other.unknownFields);
                 onChanged();
                 return this;
@@ -11576,6 +11636,9 @@ public final class RpcRequests {
                     return false;
                 }
                 if (!hasOffset()) {
+                    return false;
+                }
+                if (!hasSliceId()) {
                     return false;
                 }
                 return true;
@@ -11817,6 +11880,42 @@ public final class RpcRequests {
             public Builder clearReadPartly() {
                 bitField0_ = (bitField0_ & ~0x00000010);
                 readPartly_ = false;
+                onChanged();
+                return this;
+            }
+
+            private int sliceId_;
+
+            /**
+             * <code>required int32 slice_id = 6;</code>
+             */
+            public boolean hasSliceId() {
+                return ((bitField0_ & 0x00000020) == 0x00000020);
+            }
+
+            /**
+             * <code>required int32 slice_id = 6;</code>
+             */
+            public int getSliceId() {
+                return sliceId_;
+            }
+
+            /**
+             * <code>required int32 slice_id = 6;</code>
+             */
+            public Builder setSliceId(int value) {
+                bitField0_ |= 0x00000020;
+                sliceId_ = value;
+                onChanged();
+                return this;
+            }
+
+            /**
+             * <code>required int32 slice_id = 6;</code>
+             */
+            public Builder clearSliceId() {
+                bitField0_ = (bitField0_ & ~0x00000020);
+                sliceId_ = 0;
                 onChanged();
                 return this;
             }
@@ -14738,18 +14837,19 @@ public final class RpcRequests {
                                               + "ted_index\030\010 \002(\003\022\014\n\004data\030\t \001(\014\"{\n\025AppendE"
                                               + "ntriesResponse\022\014\n\004term\030\001 \002(\003\022\017\n\007success\030"
                                               + "\002 \002(\010\022\026\n\016last_log_index\030\003 \001(\003\022+\n\rerrorRe"
-                                              + "sponse\030c \001(\0132\024.jraft.ErrorResponse\"i\n\016Ge"
+                                              + "sponse\030c \001(\0132\024.jraft.ErrorResponse\"{\n\016Ge"
                                               + "tFileRequest\022\021\n\treader_id\030\001 \002(\003\022\020\n\010filen"
                                               + "ame\030\002 \002(\t\022\r\n\005count\030\003 \002(\003\022\016\n\006offset\030\004 \002(\003"
-                                              + "\022\023\n\013read_partly\030\005 \001(\010\"l\n\017GetFileResponse"
-                                              + "\022\013\n\003eof\030\001 \002(\010\022\014\n\004data\030\002 \002(\014\022\021\n\tread_size"
-                                              + "\030\003 \001(\003\022+\n\rerrorResponse\030c \001(\0132\024.jraft.Er"
-                                              + "rorResponse\"Y\n\020ReadIndexRequest\022\020\n\010group"
-                                              + "_id\030\001 \002(\t\022\021\n\tserver_id\030\002 \002(\t\022\017\n\007entries\030"
-                                              + "\003 \003(\014\022\017\n\007peer_id\030\004 \001(\t\"`\n\021ReadIndexRespo"
-                                              + "nse\022\r\n\005index\030\001 \002(\003\022\017\n\007success\030\002 \002(\010\022+\n\re"
-                                              + "rrorResponse\030c \001(\0132\024.jraft.ErrorResponse"
-                                              + "B(\n\031com.alipay.sofa.jraft.rpcB\013RpcReques" + "ts" };
+                                              + "\022\023\n\013read_partly\030\005 \001(\010\022\020\n\010slice_id\030\006 \002(\005\""
+                                              + "l\n\017GetFileResponse\022\013\n\003eof\030\001 \002(\010\022\014\n\004data\030"
+                                              + "\002 \002(\014\022\021\n\tread_size\030\003 \001(\003\022+\n\rerrorRespons"
+                                              + "e\030c \001(\0132\024.jraft.ErrorResponse\"Y\n\020ReadInd"
+                                              + "exRequest\022\020\n\010group_id\030\001 \002(\t\022\021\n\tserver_id"
+                                              + "\030\002 \002(\t\022\017\n\007entries\030\003 \003(\014\022\017\n\007peer_id\030\004 \001(\t"
+                                              + "\"`\n\021ReadIndexResponse\022\r\n\005index\030\001 \002(\003\022\017\n\007"
+                                              + "success\030\002 \002(\010\022+\n\rerrorResponse\030c \001(\0132\024.j"
+                                              + "raft.ErrorResponseB(\n\031com.alipay.sofa.jr"
+                                              + "aft.rpcB\013RpcRequests" };
         com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner = new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
             public com.google.protobuf.ExtensionRegistry assignDescriptors(com.google.protobuf.Descriptors.FileDescriptor root) {
                 descriptor = root;
@@ -14804,7 +14904,7 @@ public final class RpcRequests {
         internal_static_jraft_GetFileRequest_descriptor = getDescriptor().getMessageTypes().get(11);
         internal_static_jraft_GetFileRequest_fieldAccessorTable = new com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
             internal_static_jraft_GetFileRequest_descriptor, new java.lang.String[] { "ReaderId", "Filename", "Count",
-            "Offset", "ReadPartly", });
+            "Offset", "ReadPartly", "SliceId", });
         internal_static_jraft_GetFileResponse_descriptor = getDescriptor().getMessageTypes().get(12);
         internal_static_jraft_GetFileResponse_fieldAccessorTable = new com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
             internal_static_jraft_GetFileResponse_descriptor, new java.lang.String[] { "Eof", "Data", "ReadSize",

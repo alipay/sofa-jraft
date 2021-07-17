@@ -16,18 +16,21 @@
  */
 package com.alipay.sofa.jraft.storage.snapshot.local;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.alipay.sofa.jraft.util.*;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,10 +45,6 @@ import com.alipay.sofa.jraft.storage.snapshot.SnapshotCopier;
 import com.alipay.sofa.jraft.storage.snapshot.SnapshotReader;
 import com.alipay.sofa.jraft.storage.snapshot.remote.RemoteFileCopier;
 import com.alipay.sofa.jraft.storage.snapshot.remote.Session;
-import com.alipay.sofa.jraft.util.ArrayDeque;
-import com.alipay.sofa.jraft.util.ByteBufferCollector;
-import com.alipay.sofa.jraft.util.Requires;
-import com.alipay.sofa.jraft.util.Utils;
 
 /**
  * Copy another machine snapshot to local.
@@ -56,9 +55,9 @@ import com.alipay.sofa.jraft.util.Utils;
  */
 public class LocalSnapshotCopier extends SnapshotCopier {
 
-    private static final Logger          LOG  = LoggerFactory.getLogger(LocalSnapshotCopier.class);
+    private static final Logger          LOG             = LoggerFactory.getLogger(LocalSnapshotCopier.class);
 
-    private final Lock                   lock = new ReentrantLock();
+    private final Lock                   lock            = new ReentrantLock();
     /** The copy job future object*/
     private volatile Future<?>           future;
     private boolean                      cancelled;
@@ -73,8 +72,12 @@ public class LocalSnapshotCopier extends SnapshotCopier {
     /** remote file copier*/
     private RemoteFileCopier             copier;
     /** current copying session*/
-    private Session                      curSession;
+    private List<Session>                sessions        = new CopyOnWriteArrayList<>();
     private SnapshotThrottle             snapshotThrottle;
+    private Map<String, CountDownLatch>  sliceMergeLatch = new HashMap<>();
+    private Executor                     executor;
+    private static final String          SLICE_SEPARATOR = "_";
+    private static final String          EXECUTOR_NAME   = "SNAPSHOT_COPIER_EXECUTOR_";
 
     public void setSnapshotThrottle(final SnapshotThrottle snapshotThrottle) {
         this.snapshotThrottle = snapshotThrottle;
@@ -91,6 +94,7 @@ public class LocalSnapshotCopier extends SnapshotCopier {
     }
 
     private void internalCopy() throws IOException, InterruptedException {
+        CountDownLatch closeLatch = null;
         // noinspection ConstantConditions
         do {
             loadMetaTable();
@@ -102,10 +106,27 @@ public class LocalSnapshotCopier extends SnapshotCopier {
                 break;
             }
             final Set<String> files = this.remoteSnapshot.listFiles();
+            closeLatch = new CountDownLatch(files.size());
             for (final String file : files) {
-                copyFile(file);
+                LocalFileMeta fileMeta = this.remoteSnapshot.getMetaTable().getFileMeta(file);
+                int sliceTotal = fileMeta.getSliceTotal();
+                sliceMergeLatch.put(file, new CountDownLatch(sliceTotal));
+
+                executor.execute(() -> copyFile(file));
+                sliceMergeLatch.get(file).await();
+                mergeSlice(file, sliceTotal);
+                if (isOk() && !this.writer.addFile(file, fileMeta)) {
+                    setError(RaftError.EIO, "Fail to add file to writer");
+                    return;
+                }
+                closeLatch.countDown();
             }
         } while (false);
+
+        if (closeLatch != null) {
+            closeLatch.await();
+        }
+
         if (!isOk() && this.writer != null && this.writer.isOk()) {
             this.writer.setError(getCode(), getErrorMsg());
         }
@@ -118,7 +139,38 @@ public class LocalSnapshotCopier extends SnapshotCopier {
         }
     }
 
-    void copyFile(final String fileName) throws IOException, InterruptedException {
+    private void mergeSlice(String filename, int sliceTotal) {
+        String filePath = this.writer.getPath() + File.separator + filename;
+
+        //Solve the problem of abnormal interruption in the process of file merging
+        //Delete incomplete merged files
+        FileUtils.deleteQuietly(new File(filePath));
+
+        //Merge file
+        boolean success = true;
+        for (int i = 0; i < sliceTotal; i++) {
+            try (InputStream inputStream = new FileInputStream(filePath + SLICE_SEPARATOR + i);
+                    OutputStream outputStream = new FileOutputStream(filePath, true)) {
+                IOUtils.copy(inputStream, outputStream);
+            } catch (IOException e) {
+                String message = String.format("Merge slice file %s IOException", filename + SLICE_SEPARATOR + i);
+                this.setError(-1, message);
+                LOG.error(message, e);
+                success = false;
+                break;
+            }
+        }
+
+        //Delete file slice after file merge
+        if (success) {
+            for (int i = 0; i < sliceTotal; i++) {
+                FileUtils.deleteQuietly(new File(filePath + SLICE_SEPARATOR + i));
+                LOG.debug("Delete slice" + filePath + SLICE_SEPARATOR + i);
+            }
+        }
+    }
+
+    void copyFile(final String fileName) {
         if (this.writer.getFileMeta(fileName) != null) {
             LOG.info("Skipped downloading {}", fileName);
             return;
@@ -126,8 +178,9 @@ public class LocalSnapshotCopier extends SnapshotCopier {
         if (!checkFile(fileName)) {
             return;
         }
-        final String filePath = this.writer.getPath() + File.separator + fileName;
-        final Path subPath = Paths.get(filePath);
+
+        String filePath = this.writer.getPath() + File.separator + fileName;
+        Path subPath = Paths.get(filePath);
         if (!subPath.equals(subPath.getParent()) && !subPath.getParent().getFileName().toString().equals(".")) {
             final File parentDir = subPath.getParent().toFile();
             if (!parentDir.exists() && !parentDir.mkdirs()) {
@@ -137,50 +190,61 @@ public class LocalSnapshotCopier extends SnapshotCopier {
             }
         }
 
-        final LocalFileMeta meta = (LocalFileMeta) this.remoteSnapshot.getFileMeta(fileName);
-        Session session = null;
+        this.lock.lock();
         try {
-            this.lock.lock();
-            try {
-                if (this.cancelled) {
-                    if (isOk()) {
-                        setError(RaftError.ECANCELED, "ECANCELED");
-                    }
-                    return;
+            if (this.cancelled) {
+                if (isOk()) {
+                    setError(RaftError.ECANCELED, "ECANCELED");
                 }
-                session = this.copier.startCopyToFile(fileName, filePath, null);
-                if (session == null) {
-                    LOG.error("Fail to copy {}", fileName);
-                    setError(-1, "Fail to copy %s", fileName);
-                    return;
-                }
-                this.curSession = session;
-
-            } finally {
-                this.lock.unlock();
-            }
-            session.join(); // join out of lock
-            this.lock.lock();
-            try {
-                this.curSession = null;
-            } finally {
-                this.lock.unlock();
-            }
-            if (!session.status().isOk() && isOk()) {
-                setError(session.status().getCode(), session.status().getErrorMsg());
                 return;
-            }
-            if (!this.writer.addFile(fileName, meta)) {
-                setError(RaftError.EIO, "Fail to add file to writer");
-                return;
-            }
-            if (!this.writer.sync()) {
-                setError(RaftError.EIO, "Fail to sync writer");
             }
         } finally {
-            if (session != null) {
-                Utils.closeQuietly(session);
-            }
+            this.lock.unlock();
+        }
+        LocalFileMeta fileMeta = (LocalFileMeta) remoteSnapshot.getFileMeta(fileName);
+        int sliceTotal = fileMeta.getSliceTotal();
+        for (int i = 0; i < sliceTotal; i++) {
+            final int finalI = i;
+            final String finalPath = filePath + SLICE_SEPARATOR + finalI;
+            executor.execute(() -> {
+                Session session = null;
+                try {
+                    long offset;
+                    try {
+                        offset = FileUtils.sizeOf(new File(finalPath));
+                    } catch (IllegalArgumentException e) {
+                        offset = 0;
+                    }
+                    try {
+                        session = this.copier.startCopyToFile(fileName,
+                                finalPath, finalI, offset, null);
+                    } catch (IOException e) {
+                        LOG.error("Copy file {} IOException", filePath + SLICE_SEPARATOR + finalI);
+                    }
+                    if (session == null) {
+                        LOG.error("Fail to copy {}", fileName);
+                        setError(-1, "Fail to copy %s", fileName);
+                        return;
+                    }
+                    this.sessions.add(session);
+
+                    try {
+                        session.join(); // join out of lock
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    this.sessions.remove(session);
+                    sliceMergeLatch.get(fileName).countDown();
+
+                    if (!session.status().isOk() && isOk()) {
+                        setError(session.status().getCode(), session.status().getErrorMsg());
+                    }
+                } finally {
+                    if (session != null) {
+                        Utils.closeQuietly(session);
+                    }
+                }
+            });
         }
     }
 
@@ -219,14 +283,14 @@ public class LocalSnapshotCopier extends SnapshotCopier {
                     return;
                 }
                 session = this.copier.startCopy2IoBuffer(Snapshot.JRAFT_SNAPSHOT_META_FILE, metaBuf, null);
-                this.curSession = session;
+                this.sessions.add(session);
             } finally {
                 this.lock.unlock();
             }
             session.join(); //join out of lock.
             this.lock.lock();
             try {
-                this.curSession = null;
+                this.sessions.remove(session);
             } finally {
                 this.lock.unlock();
             }
@@ -359,6 +423,10 @@ public class LocalSnapshotCopier extends SnapshotCopier {
         this.cancelled = false;
         this.filterBeforeCopyRemote = opts.getNodeOptions().isFilterBeforeCopyRemote();
         this.remoteSnapshot = new LocalSnapshot(opts.getRaftOptions());
+        this.executor = ThreadPoolUtil.newBuilder().poolName(EXECUTOR_NAME).enableMetric(true)
+            .coreThreads(opts.getNodeOptions().getSnapshotCopierThreadPoolSize())
+            .maximumThreads(opts.getNodeOptions().getSnapshotCopierThreadPoolSize()).keepAliveSeconds(60L)
+            .workQueue(new LinkedBlockingQueue<>()).threadFactory(new NamedThreadFactory(EXECUTOR_NAME, true)).build();
         return this.copier.init(uri, this.snapshotThrottle, opts);
     }
 
@@ -379,7 +447,7 @@ public class LocalSnapshotCopier extends SnapshotCopier {
     }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
         cancel();
         try {
             join();
@@ -404,8 +472,10 @@ public class LocalSnapshotCopier extends SnapshotCopier {
                 setError(RaftError.ECANCELED, "Cancel the copier manually.");
             }
             this.cancelled = true;
-            if (this.curSession != null) {
-                this.curSession.cancel();
+
+            for (Session session : sessions) {
+                session.cancel();
+                sessions.remove(session);
             }
             if (this.future != null) {
                 this.future.cancel(true);

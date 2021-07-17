@@ -27,6 +27,7 @@ import com.alipay.sofa.jraft.storage.SnapshotThrottle;
 import com.alipay.sofa.jraft.storage.io.LocalDirReader;
 import com.alipay.sofa.jraft.storage.snapshot.Snapshot;
 import com.alipay.sofa.jraft.util.ByteBufferCollector;
+import org.apache.commons.io.FileUtils;
 
 /**
  * Snapshot file reader
@@ -40,8 +41,8 @@ public class SnapshotFileReader extends LocalDirReader {
     private final SnapshotThrottle snapshotThrottle;
     private LocalSnapshotMetaTable metaTable;
 
-    public SnapshotFileReader(String path, SnapshotThrottle snapshotThrottle) {
-        super(path);
+    public SnapshotFileReader(String path, SnapshotThrottle snapshotThrottle, long sliceSize) {
+        super(path, sliceSize);
         this.snapshotThrottle = snapshotThrottle;
     }
 
@@ -59,10 +60,23 @@ public class SnapshotFileReader extends LocalDirReader {
     }
 
     @Override
-    public int readFile(final ByteBufferCollector metaBufferCollector, final String fileName, final long offset,
-                        final long maxCount) throws IOException, RetryAgainException {
+    public int readFile(final ByteBufferCollector metaBufferCollector, final String fileName, final long sliceId,
+                        final long offset, final long maxCount) throws IOException, RetryAgainException {
         // read the whole meta file.
         if (fileName.equals(Snapshot.JRAFT_SNAPSHOT_META_FILE)) {
+
+            //Calculation sliceTotal
+            for (String name : this.metaTable.listFiles()) {
+                String filePath = getPath() + File.separator + name;
+                long size = FileUtils.sizeOf(new File(filePath));
+                long sliceTotal = size % sliceSize == 0 ? size / sliceSize : size / sliceSize + 1;
+                LocalFileMeta fileMeta = this.metaTable.getFileMeta(name);
+                LocalFileMeta.Builder builder = LocalFileMeta.newBuilder();
+                builder.mergeFrom(fileMeta);
+                builder.setSliceTotal((int) sliceTotal);
+                metaTable.putFile(name, builder.build());
+            }
+
             final ByteBuffer metaBuf = this.metaTable.saveToByteBufferAsRemote();
             // because bufRef will flip the buffer before using, so we must set the meta buffer position to it's limit.
             metaBuf.position(metaBuf.limit());
@@ -87,6 +101,6 @@ public class SnapshotFileReader extends LocalDirReader {
             }
         }
 
-        return readFileWithMeta(metaBufferCollector, fileName, fileMeta, offset, newMaxCount);
+        return readFileWithMeta(metaBufferCollector, fileName, sliceId, fileMeta, offset, newMaxCount);
     }
 }

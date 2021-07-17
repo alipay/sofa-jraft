@@ -86,6 +86,10 @@ public class RaftOptions implements Copiable<RaftOptions> {
      * @since 1.3.0
      */
     private boolean        stepDownWhenVoteTimedout             = true;
+    /**
+     * Size of each slice
+     */
+    private long           sliceSize                            = 10;
 
     public boolean isStepDownWhenVoteTimedout() {
         return this.stepDownWhenVoteTimedout;
@@ -231,6 +235,14 @@ public class RaftOptions implements Copiable<RaftOptions> {
         this.openStatistics = openStatistics;
     }
 
+    public long getSliceSize() {
+        return sliceSize;
+    }
+
+    public void setSliceSize(long sliceSize) {
+        this.sliceSize = sliceSize;
+    }
+
     @Override
     public RaftOptions copy() {
         final RaftOptions raftOptions = new RaftOptions();
@@ -251,6 +263,7 @@ public class RaftOptions implements Copiable<RaftOptions> {
         raftOptions.setDisruptorPublishEventWaitTimeoutSecs(this.disruptorPublishEventWaitTimeoutSecs);
         raftOptions.setEnableLogEntryChecksum(this.enableLogEntryChecksum);
         raftOptions.setReadOnlyOptions(this.readOnlyOptions);
+        raftOptions.setSliceSize(this.sliceSize);
         return raftOptions;
     }
 
@@ -265,6 +278,6 @@ public class RaftOptions implements Copiable<RaftOptions> {
                + ", maxReplicatorInflightMsgs=" + this.maxReplicatorInflightMsgs + ", disruptorBufferSize="
                + this.disruptorBufferSize + ", disruptorPublishEventWaitTimeoutSecs="
                + this.disruptorPublishEventWaitTimeoutSecs + ", enableLogEntryChecksum=" + this.enableLogEntryChecksum
-               + ", readOnlyOptions=" + this.readOnlyOptions + '}';
+               + ", readOnlyOptions=" + this.readOnlyOptions + ", sliceSize=" + this.sliceSize + '}';
     }
 }

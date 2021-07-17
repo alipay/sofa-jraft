@@ -46,7 +46,7 @@ public class FileServiceTest {
     @Before
     public void setup() throws Exception {
         this.path = TestUtils.mkTempDir();
-        this.fileReader = new LocalDirReader(path);
+        this.fileReader = new LocalDirReader(path, 1024);
     }
 
     @After
@@ -99,7 +99,7 @@ public class FileServiceTest {
         writeData();
         long readerId = FileService.getInstance().addReader(this.fileReader);
         RpcRequests.GetFileRequest request = RpcRequests.GetFileRequest.newBuilder().setCount(Integer.MAX_VALUE)
-            .setFilename("data").setOffset(0).setReaderId(readerId).build();
+            .setFilename("data").setOffset(0).setReaderId(readerId).setSliceId(0).build();
         RpcContext asyncContext = Mockito.mock(RpcContext.class);
         Message msg = FileService.getInstance().handleGetFile(request, new RpcRequestClosure(asyncContext));
         assertTrue(msg instanceof RpcRequests.GetFileResponse);

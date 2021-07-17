@@ -37,14 +37,14 @@ public class LocalFileReaderTest extends BaseStorageTest {
     @Before
     public void setup() throws Exception {
         super.setup();
-        this.fileReader = new LocalDirReader(path);
+        this.fileReader = new LocalDirReader(path, 1024);
     }
 
     @Test
     public void testReadFile() throws Exception {
         final ByteBufferCollector bufRef = ByteBufferCollector.allocate();
         try {
-            this.fileReader.readFile(bufRef, "unfound", 0, 1024);
+            this.fileReader.readFile(bufRef, "unfound", 0, 0, 1024);
             fail();
         } catch (final FileNotFoundException e) {
 
@@ -56,7 +56,7 @@ public class LocalFileReaderTest extends BaseStorageTest {
     }
 
     private void assertReadResult(ByteBufferCollector bufRef, String data) throws Exception {
-        final int read = this.fileReader.readFile(bufRef, "data", 0, 1024);
+        final int read = this.fileReader.readFile(bufRef, "data", 0, 0, 1024);
         assertEquals(-1, read);
         final ByteBuffer buf = bufRef.getBuffer();
         buf.flip();
@@ -86,13 +86,13 @@ public class LocalFileReaderTest extends BaseStorageTest {
         }
         FileUtils.writeStringToFile(file, data);
 
-        int read = this.fileReader.readFile(bufRef, "data", 0, 1024);
+        int read = this.fileReader.readFile(bufRef, "data", 0, 0, 1024);
         assertEquals(1024, read);
-        read = this.fileReader.readFile(bufRef, "data", 1024, 1024);
+        read = this.fileReader.readFile(bufRef, "data", 0, 1024, 1024);
         assertEquals(1024, read);
-        read = this.fileReader.readFile(bufRef, "data", 1024 + 1024, 1024);
+        read = this.fileReader.readFile(bufRef, "data", 0, 1024 + 1024, 1024);
         assertEquals(1024, read);
-        read = this.fileReader.readFile(bufRef, "data", 1024 + 1024 + 1024, 1024);
+        read = this.fileReader.readFile(bufRef, "data", 0, 1024 + 1024 + 1024, 1024);
         assertEquals(-1, read);
 
         final ByteBuffer buf = bufRef.getBuffer();

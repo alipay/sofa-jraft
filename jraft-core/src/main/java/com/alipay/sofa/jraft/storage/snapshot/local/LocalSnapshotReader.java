@@ -53,6 +53,7 @@ public class LocalSnapshotReader extends SnapshotReader {
     private final String                 path;
     private final LocalSnapshotStorage   snapshotStorage;
     private final SnapshotThrottle       snapshotThrottle;
+    private final RaftOptions            raftOptions;
 
     @Override
     public void close() throws IOException {
@@ -69,6 +70,7 @@ public class LocalSnapshotReader extends SnapshotReader {
         this.path = path;
         this.readerId = 0;
         this.metaTable = new LocalSnapshotMetaTable(raftOptions);
+        this.raftOptions = raftOptions;
     }
 
     @OnlyForTest
@@ -123,7 +125,8 @@ public class LocalSnapshotReader extends SnapshotReader {
             return null;
         }
         if (this.readerId == 0) {
-            final SnapshotFileReader reader = new SnapshotFileReader(this.path, this.snapshotThrottle);
+            final SnapshotFileReader reader = new SnapshotFileReader(this.path, this.snapshotThrottle,
+                raftOptions.getSliceSize());
             reader.setMetaTable(this.metaTable);
             if (!reader.open()) {
                 LOG.error("Open snapshot {} failed.", this.path);

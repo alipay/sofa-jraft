@@ -40,7 +40,7 @@ public class SnapshotFileReaderTest extends BaseStorageTest {
     @Before
     public void setup() throws Exception {
         super.setup();
-        this.reader = new SnapshotFileReader(path, null);
+        this.reader = new SnapshotFileReader(path, null, 0);
         metaTable = new LocalSnapshotMetaTable(new RaftOptions());
         this.reader.setMetaTable(metaTable);
     }
@@ -49,7 +49,7 @@ public class SnapshotFileReaderTest extends BaseStorageTest {
     public void testReadMetaFile() throws Exception {
         final ByteBufferCollector bufRef = ByteBufferCollector.allocate(1024);
         final LocalFileMetaOutter.LocalFileMeta meta = addDataMeta();
-        assertEquals(-1, this.reader.readFile(bufRef, Snapshot.JRAFT_SNAPSHOT_META_FILE, 0, Integer.MAX_VALUE));
+        assertEquals(-1, this.reader.readFile(bufRef, Snapshot.JRAFT_SNAPSHOT_META_FILE, 0, 0, Integer.MAX_VALUE));
 
         final ByteBuffer buf = bufRef.getBuffer();
         buf.flip();
@@ -69,7 +69,7 @@ public class SnapshotFileReaderTest extends BaseStorageTest {
     public void testReadFile() throws Exception {
         final ByteBufferCollector bufRef = ByteBufferCollector.allocate();
         try {
-            this.reader.readFile(bufRef, "unfound", 0, 1024);
+            this.reader.readFile(bufRef, "unfound", 0, 0, 1024);
             fail();
         } catch (final FileNotFoundException e) {
 
@@ -78,7 +78,7 @@ public class SnapshotFileReaderTest extends BaseStorageTest {
         final String data = writeData();
         addDataMeta();
 
-        final int read = this.reader.readFile(bufRef, "data", 0, 1024);
+        final int read = this.reader.readFile(bufRef, "data", 0, 0, 1024);
         assertEquals(-1, read);
         final ByteBuffer buf = bufRef.getBuffer();
         buf.flip();

@@ -105,9 +105,9 @@ public class RemoteFileCopier {
      * @param opts     options of copy
      * @return true if copy success
      */
-    public boolean copyToFile(final String source, final String destPath, final CopyOptions opts) throws IOException,
-                                                                                                 InterruptedException {
-        final Session session = startCopyToFile(source, destPath, opts);
+    public boolean copyToFile(final String source, final String destPath, final int sinceId, final long offset,
+                              final CopyOptions opts) throws IOException, InterruptedException {
+        final Session session = startCopyToFile(source, destPath, sinceId, offset, opts);
         if (session == null) {
             return false;
         }
@@ -119,19 +119,11 @@ public class RemoteFileCopier {
         }
     }
 
-    public Session startCopyToFile(final String source, final String destPath, final CopyOptions opts)
-                                                                                                      throws IOException {
+    public Session startCopyToFile(final String source, final String destPath, final int sinceId, final long offset,
+                                   final CopyOptions opts) throws IOException {
         final File file = new File(destPath);
 
-        // delete exists file.
-        if (file.exists()) {
-            if (!file.delete()) {
-                LOG.error("Fail to delete destPath: {}.", destPath);
-                return null;
-            }
-        }
-
-        final OutputStream out = new BufferedOutputStream(new FileOutputStream(file, false) {
+        final OutputStream out = new BufferedOutputStream(new FileOutputStream(file, true) {
 
             @Override
             public void close() throws IOException {
@@ -139,10 +131,11 @@ public class RemoteFileCopier {
                 super.close();
             }
         });
-        final CopySession session = newCopySession(source);
+        final CopySession session = newCopySession(source, sinceId, offset);
         session.setOutputStream(out);
         session.setDestPath(destPath);
         session.setDestBuf(null);
+
         if (opts != null) {
             session.setCopyOptions(opts);
         }
@@ -150,10 +143,10 @@ public class RemoteFileCopier {
         return session;
     }
 
-    private CopySession newCopySession(final String source) {
+    private CopySession newCopySession(final String source, final int sliceId, long offset) {
         final GetFileRequest.Builder reqBuilder = GetFileRequest.newBuilder() //
             .setFilename(source) //
-            .setReaderId(this.readId);
+            .setReaderId(this.readId).setOffset(offset).setSliceId(sliceId);
         return new CopySession(this.rpcService, this.timerManager, this.snapshotThrottle, this.raftOptions, reqBuilder,
             this.endpoint);
     }
@@ -180,7 +173,7 @@ public class RemoteFileCopier {
     }
 
     public Session startCopy2IoBuffer(final String source, final ByteBufferCollector destBuf, final CopyOptions opts) {
-        final CopySession session = newCopySession(source);
+        final CopySession session = newCopySession(source, 0, 0);
         session.setOutputStream(null);
         session.setDestBuf(destBuf);
         if (opts != null) {

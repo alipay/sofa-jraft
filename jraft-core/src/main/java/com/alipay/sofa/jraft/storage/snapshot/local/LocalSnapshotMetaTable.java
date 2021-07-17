@@ -100,6 +100,10 @@ public class LocalSnapshotMetaTable {
         return this.fileMap.putIfAbsent(fileName, meta) == null;
     }
 
+    public void putFile(final String fileName, final LocalFileMeta meta) {
+        this.fileMap.put(fileName, meta);
+    }
+
     /**
      * Removes a file metadata.
      */
