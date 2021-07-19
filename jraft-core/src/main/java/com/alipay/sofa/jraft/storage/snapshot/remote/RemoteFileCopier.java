@@ -16,15 +16,6 @@
  */
 package com.alipay.sofa.jraft.storage.snapshot.remote;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.alipay.sofa.jraft.core.Scheduler;
 import com.alipay.sofa.jraft.option.CopyOptions;
 import com.alipay.sofa.jraft.option.RaftOptions;
@@ -37,6 +28,10 @@ import com.alipay.sofa.jraft.util.ByteBufferCollector;
 import com.alipay.sofa.jraft.util.Endpoint;
 import com.alipay.sofa.jraft.util.OnlyForTest;
 import com.alipay.sofa.jraft.util.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
 
 /**
  * Remote file copier
@@ -105,9 +100,10 @@ public class RemoteFileCopier {
      * @param opts     options of copy
      * @return true if copy success
      */
-    public boolean copyToFile(final String source, final String destPath, final CopyOptions opts) throws IOException,
-                                                                                                 InterruptedException {
-        final Session session = startCopyToFile(source, destPath, opts);
+    public boolean copyToFile(final String source, final String destPath, final long fileSize, final CopyOptions opts)
+                                                                                                                      throws IOException,
+                                                                                                                      InterruptedException {
+        final Session session = startCopyToFile(source, destPath, fileSize, opts);
         if (session == null) {
             return false;
         }
@@ -119,34 +115,15 @@ public class RemoteFileCopier {
         }
     }
 
-    public Session startCopyToFile(final String source, final String destPath, final CopyOptions opts)
-                                                                                                      throws IOException {
-        final File file = new File(destPath);
-
-        // delete exists file.
-        if (file.exists()) {
-            if (!file.delete()) {
-                LOG.error("Fail to delete destPath: {}.", destPath);
-                return null;
-            }
-        }
-
-        final OutputStream out = new BufferedOutputStream(new FileOutputStream(file, false) {
-
-            @Override
-            public void close() throws IOException {
-                getFD().sync();
-                super.close();
-            }
-        });
+    public Session startCopyToFile(final String source, final String destPath, final long fileSize,
+                                   final CopyOptions opts) throws IOException {
         final CopySession session = newCopySession(source);
-        session.setOutputStream(out);
+        session.init(destPath, fileSize, null);
         session.setDestPath(destPath);
-        session.setDestBuf(null);
         if (opts != null) {
             session.setCopyOptions(opts);
         }
-        session.sendNextRpc();
+        session.start();
         return session;
     }
 
@@ -165,9 +142,9 @@ public class RemoteFileCopier {
      * @param opt     options of copy
      * @return true if copy success
      */
-    public boolean copy2IoBuffer(final String source, final ByteBufferCollector destBuf, final CopyOptions opt)
-                                                                                                               throws InterruptedException {
-        final Session session = startCopy2IoBuffer(source, destBuf, opt);
+    public boolean copy2IoBuffer(final String source, final ByteBufferCollector destBuf, final long fileSize,
+                                 final CopyOptions opt) throws InterruptedException {
+        final Session session = startCopy2IoBuffer(source, destBuf, fileSize, opt);
         if (session == null) {
             return false;
         }
@@ -179,14 +156,18 @@ public class RemoteFileCopier {
         }
     }
 
-    public Session startCopy2IoBuffer(final String source, final ByteBufferCollector destBuf, final CopyOptions opts) {
+    public Session startCopy2IoBuffer(final String source, final ByteBufferCollector destBuf, final long fileSize,
+                                      final CopyOptions opts) {
         final CopySession session = newCopySession(source);
-        session.setOutputStream(null);
-        session.setDestBuf(destBuf);
-        if (opts != null) {
-            session.setCopyOptions(opts);
+        try {
+            session.init(null, fileSize, destBuf);
+            if (opts != null) {
+                session.setCopyOptions(opts);
+            }
+            session.start();
+        } catch (IOException ignored) {
+            // if dest is a buffer, never get here.
         }
-        session.sendNextRpc();
         return session;
     }
 }

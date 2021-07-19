@@ -154,6 +154,16 @@ public final class LocalFileMetaOutter {
          * <code>optional string checksum = 3;</code>
          */
         com.google.protobuf.ByteString getChecksumBytes();
+
+        /**
+         * <code>optional int64 file_size = 4;</code>
+         */
+        boolean hasFileSize();
+
+        /**
+         * <code>optional int64 file_size = 4;</code>
+         */
+        long getFileSize();
     }
 
     /**
@@ -173,6 +183,7 @@ public final class LocalFileMetaOutter {
             userMeta_ = com.google.protobuf.ByteString.EMPTY;
             source_ = 0;
             checksum_ = "";
+            fileSize_ = 0L;
         }
 
         @java.lang.Override
@@ -225,6 +236,11 @@ public final class LocalFileMetaOutter {
                             com.google.protobuf.ByteString bs = input.readBytes();
                             bitField0_ |= 0x00000004;
                             checksum_ = bs;
+                            break;
+                        }
+                        case 32: {
+                            bitField0_ |= 0x00000008;
+                            fileSize_ = input.readInt64();
                             break;
                         }
                     }
@@ -328,6 +344,23 @@ public final class LocalFileMetaOutter {
             }
         }
 
+        public static final int FILE_SIZE_FIELD_NUMBER = 4;
+        private long            fileSize_;
+
+        /**
+         * <code>optional int64 file_size = 4;</code>
+         */
+        public boolean hasFileSize() {
+            return ((bitField0_ & 0x00000008) == 0x00000008);
+        }
+
+        /**
+         * <code>optional int64 file_size = 4;</code>
+         */
+        public long getFileSize() {
+            return fileSize_;
+        }
+
         private byte memoizedIsInitialized = -1;
 
         public final boolean isInitialized() {
@@ -351,6 +384,9 @@ public final class LocalFileMetaOutter {
             if (((bitField0_ & 0x00000004) == 0x00000004)) {
                 com.google.protobuf.GeneratedMessageV3.writeString(output, 3, checksum_);
             }
+            if (((bitField0_ & 0x00000008) == 0x00000008)) {
+                output.writeInt64(4, fileSize_);
+            }
             unknownFields.writeTo(output);
         }
 
@@ -368,6 +404,9 @@ public final class LocalFileMetaOutter {
             }
             if (((bitField0_ & 0x00000004) == 0x00000004)) {
                 size += com.google.protobuf.GeneratedMessageV3.computeStringSize(3, checksum_);
+            }
+            if (((bitField0_ & 0x00000008) == 0x00000008)) {
+                size += com.google.protobuf.CodedOutputStream.computeInt64Size(4, fileSize_);
             }
             size += unknownFields.getSerializedSize();
             memoizedSize = size;
@@ -397,6 +436,10 @@ public final class LocalFileMetaOutter {
             if (hasChecksum()) {
                 result = result && getChecksum().equals(other.getChecksum());
             }
+            result = result && (hasFileSize() == other.hasFileSize());
+            if (hasFileSize()) {
+                result = result && (getFileSize() == other.getFileSize());
+            }
             result = result && unknownFields.equals(other.unknownFields);
             return result;
         }
@@ -419,6 +462,10 @@ public final class LocalFileMetaOutter {
             if (hasChecksum()) {
                 hash = (37 * hash) + CHECKSUM_FIELD_NUMBER;
                 hash = (53 * hash) + getChecksum().hashCode();
+            }
+            if (hasFileSize()) {
+                hash = (37 * hash) + FILE_SIZE_FIELD_NUMBER;
+                hash = (53 * hash) + com.google.protobuf.Internal.hashLong(getFileSize());
             }
             hash = (29 * hash) + unknownFields.hashCode();
             memoizedHashCode = hash;
@@ -555,6 +602,8 @@ public final class LocalFileMetaOutter {
                 bitField0_ = (bitField0_ & ~0x00000002);
                 checksum_ = "";
                 bitField0_ = (bitField0_ & ~0x00000004);
+                fileSize_ = 0L;
+                bitField0_ = (bitField0_ & ~0x00000008);
                 return this;
             }
 
@@ -591,6 +640,10 @@ public final class LocalFileMetaOutter {
                     to_bitField0_ |= 0x00000004;
                 }
                 result.checksum_ = checksum_;
+                if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
+                    to_bitField0_ |= 0x00000008;
+                }
+                result.fileSize_ = fileSize_;
                 result.bitField0_ = to_bitField0_;
                 onBuilt();
                 return result;
@@ -644,6 +697,9 @@ public final class LocalFileMetaOutter {
                     bitField0_ |= 0x00000004;
                     checksum_ = other.checksum_;
                     onChanged();
+                }
+                if (other.hasFileSize()) {
+                    setFileSize(other.getFileSize());
                 }
                 this.mergeUnknownFields(other.unknownFields);
                 onChanged();
@@ -832,6 +888,42 @@ public final class LocalFileMetaOutter {
                 return this;
             }
 
+            private long fileSize_;
+
+            /**
+             * <code>optional int64 file_size = 4;</code>
+             */
+            public boolean hasFileSize() {
+                return ((bitField0_ & 0x00000008) == 0x00000008);
+            }
+
+            /**
+             * <code>optional int64 file_size = 4;</code>
+             */
+            public long getFileSize() {
+                return fileSize_;
+            }
+
+            /**
+             * <code>optional int64 file_size = 4;</code>
+             */
+            public Builder setFileSize(long value) {
+                bitField0_ |= 0x00000008;
+                fileSize_ = value;
+                onChanged();
+                return this;
+            }
+
+            /**
+             * <code>optional int64 file_size = 4;</code>
+             */
+            public Builder clearFileSize() {
+                bitField0_ = (bitField0_ & ~0x00000008);
+                fileSize_ = 0L;
+                onChanged();
+                return this;
+            }
+
             public final Builder setUnknownFields(final com.google.protobuf.UnknownFieldSet unknownFields) {
                 return super.setUnknownFields(unknownFields);
             }
@@ -887,12 +979,13 @@ public final class LocalFileMetaOutter {
 
     private static com.google.protobuf.Descriptors.FileDescriptor descriptor;
     static {
-        java.lang.String[] descriptorData = { "\n\025local_file_meta.proto\022\005jraft\"W\n\rLocalF"
+        java.lang.String[] descriptorData = { "\n\025local_file_meta.proto\022\005jraft\"j\n\rLocalF"
                                               + "ileMeta\022\021\n\tuser_meta\030\001 \001(\014\022!\n\006source\030\002 \001"
-                                              + "(\0162\021.jraft.FileSource\022\020\n\010checksum\030\003 \001(\t*"
-                                              + ">\n\nFileSource\022\025\n\021FILE_SOURCE_LOCAL\020\000\022\031\n\025"
-                                              + "FILE_SOURCE_REFERENCE\020\001B3\n\034com.alipay.so"
-                                              + "fa.jraft.entityB\023LocalFileMetaOutter" };
+                                              + "(\0162\021.jraft.FileSource\022\020\n\010checksum\030\003 \001(\t\022"
+                                              + "\021\n\tfile_size\030\004 \001(\003*>\n\nFileSource\022\025\n\021FILE"
+                                              + "_SOURCE_LOCAL\020\000\022\031\n\025FILE_SOURCE_REFERENCE"
+                                              + "\020\001B3\n\034com.alipay.sofa.jraft.entityB\023Loca"
+                                              + "lFileMetaOutter" };
         com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner = new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
             public com.google.protobuf.ExtensionRegistry assignDescriptors(com.google.protobuf.Descriptors.FileDescriptor root) {
                 descriptor = root;
@@ -903,8 +996,8 @@ public final class LocalFileMetaOutter {
             new com.google.protobuf.Descriptors.FileDescriptor[] {}, assigner);
         internal_static_jraft_LocalFileMeta_descriptor = getDescriptor().getMessageTypes().get(0);
         internal_static_jraft_LocalFileMeta_fieldAccessorTable = new com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
-            internal_static_jraft_LocalFileMeta_descriptor,
-            new java.lang.String[] { "UserMeta", "Source", "Checksum", });
+            internal_static_jraft_LocalFileMeta_descriptor, new java.lang.String[] { "UserMeta", "Source", "Checksum",
+            "FileSize", });
     }
 
     // @@protoc_insertion_point(outer_class_scope)

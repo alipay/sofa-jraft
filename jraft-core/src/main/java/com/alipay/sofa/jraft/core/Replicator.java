@@ -146,6 +146,11 @@ public class Replicator implements ThreadId.OnError {
         return prev;
     }
 
+    @OnlyForTest
+    public SnapshotReader getReader() {
+        return this.reader;
+    }
+
     /**
      * Replicator internal state
      * @author dennis

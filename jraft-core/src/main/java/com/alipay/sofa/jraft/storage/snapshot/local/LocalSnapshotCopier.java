@@ -110,7 +110,7 @@ public class LocalSnapshotCopier extends SnapshotCopier {
             this.writer.setError(getCode(), getErrorMsg());
         }
         if (this.writer != null) {
-            Utils.closeQuietly(this.writer);
+            this.writer.close(true);
             this.writer = null;
         }
         if (isOk()) {
@@ -148,7 +148,7 @@ public class LocalSnapshotCopier extends SnapshotCopier {
                     }
                     return;
                 }
-                session = this.copier.startCopyToFile(fileName, filePath, null);
+                session = this.copier.startCopyToFile(fileName, filePath, meta.getFileSize(), null);
                 if (session == null) {
                     LOG.error("Fail to copy {}", fileName);
                     setError(-1, "Fail to copy %s", fileName);
@@ -218,7 +218,7 @@ public class LocalSnapshotCopier extends SnapshotCopier {
                     }
                     return;
                 }
-                session = this.copier.startCopy2IoBuffer(Snapshot.JRAFT_SNAPSHOT_META_FILE, metaBuf, null);
+                session = this.copier.startCopy2IoBuffer(Snapshot.JRAFT_SNAPSHOT_META_FILE, metaBuf, 0, null);
                 this.curSession = session;
             } finally {
                 this.lock.unlock();
@@ -326,11 +326,14 @@ public class LocalSnapshotCopier extends SnapshotCopier {
     }
 
     private void filter() throws IOException {
-        this.writer = (LocalSnapshotWriter) this.storage.create(!this.filterBeforeCopyRemote);
+        this.writer = (LocalSnapshotWriter) this.storage.create(false);
         if (this.writer == null) {
             setError(RaftError.EIO, "Fail to create snapshot writer");
             return;
         }
+
+        this.writer.checkExistingMeta(this.remoteSnapshot.getMetaTable().getMeta());
+
         if (this.filterBeforeCopyRemote) {
             final SnapshotReader reader = this.storage.open();
             if (!filterBeforeCopy(this.writer, reader)) {
